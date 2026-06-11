@@ -1,20 +1,41 @@
+from main_agent import UnifiedAssistant
 from vector_store import VectorStore
-from nutrition_db import NutritionDB
-from agent import TrainingAssistant
+import os
 
 
 SENTENCE_THRESHOLD = 12
 
+HELP_MESSAGE = f"""{'=' * 60}
+Welcome to Diet & Training Assistant!
+
+Commands:
+\t!exit  -  exit the program
+\t!reset -  reset the conversation
+\t!clear -  clear the screen
+{'=' * 60}
+"""
+
+def clear_screen():
+    os.system('cls' if os.name == 'nt' else 'clear')
+    print(HELP_MESSAGE)
+
 def main():
     vs = VectorStore()
-    ndb = NutritionDB()
-    assistant = TrainingAssistant(vs, ndb)
+    assistant = UnifiedAssistant(vs)
 
-    print("Workout assistant ready. Type 'exit' to quit.\n")
+    print(HELP_MESSAGE)
     while True:
         user_input = input("You: ")
-        if user_input.lower() == "exit":
+        input_lower = user_input.lower()
+        if input_lower == "!exit":
             break
+        elif input_lower == "!clear":
+            clear_screen()
+            continue
+        elif input_lower == "!reset":
+            assistant.clear_history()
+            clear_screen()
+            continue
         while len(user_input) < SENTENCE_THRESHOLD:
             user_input += input("\t> ")
 

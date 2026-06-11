@@ -1,11 +1,9 @@
 import json
 from openai import OpenAI
-from config import LMSTUDIO_BASE_URL, LMSTUDIO_MODEL
+from config import AI_MODEL, CLIENT
 from vector_store import VectorStore
 from guardrails import is_medical_query, SAFETY_MESSAGE
 
-
-client = OpenAI(base_url=LMSTUDIO_BASE_URL, api_key="not-needed")
 
 SYSTEM_PROMPT = (
     "You are a knowledgeable and concise training assistant. "
@@ -23,16 +21,15 @@ SYSTEM_PROMPT = (
 class TrainingAssistant:
     def __init__(self, vector_store: VectorStore):
         self.vs = vector_store
-        self.conversation_history = []  # list of {"role": ..., "content": ...}
 
-    def _get_full_context(self):
+    def _get_full_context(self, history: list):
         """Return conversation as list of messages, capped to last N exchanges."""
         # Keep last 10 messages (5 exchanges) to save tokens
-        return self.conversation_history[-10:]
+        return history[-10:]
 
-    def extract_intent(self, user_msg: str) -> dict:
+    def extract_intent(self, user_msg: str, history: list) -> dict:
         # Use recent context to disambiguate references (like "that exercise")
-        context = self._get_full_context()
+        context = self._get_full_context(history)
         messages = [
             {
                 "role": "system",
@@ -46,10 +43,10 @@ class TrainingAssistant:
         ]
         # Add a summary of last assistant response for context (optional)
         if context:
-            messages.append({"role": "system", "content": f"Recent conversation: {json.dumps(context[-2:])}"})
+            messages.append({"role": "system", "content": f"Recent conversation: {json.dumps(context[-4:])}"})
         messages.append({"role": "user", "content": user_msg})
-        resp = client.chat.completions.create(
-            model=LMSTUDIO_MODEL,
+        resp = CLIENT.chat.completions.create(
+            model=AI_MODEL,
             messages=messages,
             max_tokens=100,
             temperature=0.0
@@ -92,8 +89,8 @@ class TrainingAssistant:
             f"Exercises:\n{candidate_desc}\n\n"
             f"Return only the exercise names, one per line."
         )
-        resp = client.chat.completions.create(
-            model=LMSTUDIO_MODEL,
+        resp = CLIENT.chat.completions.create(
+            model=AI_MODEL,
             messages=[{"role": "user", "content": filter_prompt}],
             max_tokens=100,
             temperature=0.2
@@ -101,10 +98,10 @@ class TrainingAssistant:
         chosen = [line.strip("- ").strip() for line in resp.choices[0].message.content.split("\n") if line.strip()]
         return [c for c in candidates if c["name"] in chosen][:top_k]
 
-    def generate_response(self, user_msg: str, exercises: list) -> str:
+    def generate_response(self, user_msg: str, exercises: list, history: list) -> str:
         # Build full prompt with history and system instructions
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-        messages.extend(self.conversation_history)
+        messages.extend(history)
         messages.append({"role": "user", "content": user_msg})
 
         # Add retrieved exercises as context (hidden from user, but assistant will use)
@@ -117,41 +114,22 @@ class TrainingAssistant:
         # Add instruction to be concise
         messages.append({"role": "system", "content": "Now answer concisely, without greetings."})
 
-        resp = client.chat.completions.create(
-            model=LMSTUDIO_MODEL,
+        resp = CLIENT.chat.completions.create(
+            model=AI_MODEL,
             messages=messages,
             max_tokens=500,
             temperature=0.7
         )
         return resp.choices[0].message.content.strip()
 
-    def handle_message(self, user_msg: str) -> str:
-        # Safety check
+    def handle_message(self, user_msg: str, history: list) -> str:
         if is_medical_query(user_msg):
-            # Still add user message to history to keep context
-            self.conversation_history.append({"role": "user", "content": user_msg})
-            self.conversation_history.append({"role": "assistant", "content": SAFETY_MESSAGE})
-            return SAFETY_MESSAGE
-
-        # Extract intent (what muscle/injury)
-        intent = self.extract_intent(user_msg)
+            return SAFETY_MESSAGE  # no history update here – caller will append
+        intent = self.extract_intent(user_msg, history)
         target = intent.get("target_muscle", "unknown")
         injury = intent.get("injury")
-
-        # Retrieve exercises if we have a target
         exercises = []
         if target != "unknown" or injury:
             exercises = self.get_safe_exercises(target if target != "unknown" else "general", injury)
-
-        # Generate response (full conversation context)
-        answer = self.generate_response(user_msg, exercises)
-
-        # Update history
-        self.conversation_history.append({"role": "user", "content": user_msg})
-        self.conversation_history.append({"role": "assistant", "content": answer})
-
-        # Trim history if too long
-        if len(self.conversation_history) > 20:  # 10 exchanges
-            self.conversation_history = self.conversation_history[-20:]
-
+        answer = self.generate_response(user_msg, exercises, history)
         return answer

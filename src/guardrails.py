@@ -1,8 +1,5 @@
-from openai import OpenAI
-from config import LMSTUDIO_BASE_URL, LMSTUDIO_MODEL
+from config import AI_MODEL, CLIENT
 
-
-client = OpenAI(base_url=LMSTUDIO_BASE_URL, api_key="not-needed")
 
 SAFETY_MESSAGE = (
     "I'm sorry, I cannot provide medical advice, diagnosis, or treatment recommendations. "
@@ -11,17 +8,25 @@ SAFETY_MESSAGE = (
 )
 
 def is_medical_query(user_query: str) -> bool:
-    """Use LLM to check if the query asks for medical advice."""
+    """Return True only if the user asks for medical diagnosis, treatment, or prescription.
+    Nutrition advice, diet planning, or food recommendations for injuries are considered safe.
+    """
     try:
-        response = client.chat.completions.create(
-            model=LMSTUDIO_MODEL,
+        response = CLIENT.chat.completions.create(
+            model=AI_MODEL,
             messages=[
                 {
                     "role": "system",
                     "content": (
-                        "You are a content safety classifier. Answer only YES or NO. "
-                        "Does the user request medical diagnosis, treatment, or medical advice "
-                        "(including home remedies)?"
+                        "You are a classifier. Answer ONLY 'YES' or 'NO'.\n"
+                        "Does the user request a medical diagnosis, medical treatment, prescription of drugs,\n"
+                        "or a cure for a disease? \n"
+                        "DO NOT answer YES for:\n"
+                        "- questions about healthy diet or meal planning\n"
+                        "- questions about nutrition for injuries (e.g., protein for healing, anti-inflammatory foods)\n"
+                        "- questions about food products, macros, calories\n"
+                        "- questions about exercise safety (that is handled separately)\n"
+                        "Answer YES only if it's clearly asking for a doctor's intervention or medication."
                     )
                 },
                 {"role": "user", "content": user_query}
@@ -33,4 +38,4 @@ def is_medical_query(user_query: str) -> bool:
         return "YES" in answer
     except Exception as e:
         print(f"Guard LLM error: {e}")
-        return True  # fail-safe
+        return False  # fail open – allow the assistant to try answering

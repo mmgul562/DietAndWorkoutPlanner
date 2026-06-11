@@ -9,14 +9,16 @@ class VectorStore:
         self.embedding_fn = embedding_functions.SentenceTransformerEmbeddingFunction(
             model_name=EMBEDDING_MODEL_NAME
         )
-        # Kolekcja główna na ćwiczenia wzbogacone
         self.exercise_collection = self.client.get_or_create_collection(
             name="exercises",
             embedding_function=self.embedding_fn
         )
-        # Kolekcja wiedzy o kontuzjach
         self.injury_collection = self.client.get_or_create_collection(
             name="injury_knowledge",
+            embedding_function=self.embedding_fn
+        )
+        self.diet_collection = self.client.get_or_create_collection(
+            name="diet_knowledge",
             embedding_function=self.embedding_fn
         )
 
@@ -68,8 +70,17 @@ class VectorStore:
         ids = [f"inj_{i}" for i in range(len(knowledge_items))]
         self.injury_collection.add(documents=docs, metadatas=metas, ids=ids)
 
+    def index_diet_knowledge(self, knowledge_items: list[dict]):
+        docs = [item["text"] for item in knowledge_items]
+        metas = [{"topic": item["topic"]} for item in knowledge_items]
+        ids = [f"diet_{i}" for i in range(len(knowledge_items))]
+        self.diet_collection.add(documents=docs, metadatas=metas, ids=ids)
+
     def search_exercises(self, query: str, n_results=5):
         return self.exercise_collection.query(query_texts=[query], n_results=n_results)
 
     def search_injury_guidelines(self, injury: str, n_results=3):
         return self.injury_collection.query(query_texts=[injury], n_results=n_results)
+
+    def search_diet_knowledge(self, query: str, n_results=3):
+        return self.diet_collection.query(query_texts=[query], n_results=n_results)
