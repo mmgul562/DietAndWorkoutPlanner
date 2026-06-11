@@ -1,0 +1,8 @@
+.venv
+src/database
+src/sources
+.env
+src/__pycache__
+src/.DS_Store
+.DS_Store
+.idea
